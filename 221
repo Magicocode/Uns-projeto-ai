@@ -1,0 +1,62 @@
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local localPlayer = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+
+local triggerBotEnabled = true  -- Ativado por padrão
+local isHoldingClick = false  -- Controla se o clique está sendo segurado
+
+local VirtualInputManager = game:GetService("VirtualInputManager")
+
+-- Simula um clique contínuo
+local function holdMouseClick(holding)
+    if holding and not isHoldingClick then
+        isHoldingClick = true
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)  -- Pressiona o botão esquerdo
+    elseif not holding and isHoldingClick then
+        isHoldingClick = false
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0) -- Solta o botão esquerdo
+    end
+end
+
+-- Loop para detectar jogadores na mira
+RunService.RenderStepped:Connect(function()
+    if not triggerBotEnabled then return end
+
+    -- Faz um Raycast na frente da câmera
+    local origin = camera.CFrame.Position
+    local direction = camera.CFrame.LookVector * 500  -- Alcance aumentado para 500
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterDescendantsInstances = {localPlayer.Character}  -- Ignora o próprio jogador
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+    local result = workspace:Raycast(origin, direction, raycastParams)
+    
+    if result and result.Instance then
+        local character = result.Instance.Parent
+        local hitPlayer = Players:GetPlayerFromCharacter(character)
+        
+        if hitPlayer then
+            holdMouseClick(true)  -- Segura o clique enquanto o jogador estiver na mira
+            return
+        end
+    end
+    
+    -- Se não houver jogador, solta o clique
+    holdMouseClick(false)
+end)
+
+-- Ativa ou desativa o Trigger Bot com a tecla "T"
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.T then
+        triggerBotEnabled = not triggerBotEnabled
+        print("Trigger Bot:", triggerBotEnabled and "Ativado" or "Desativado")
+        if not triggerBotEnabled then
+            holdMouseClick(false)  -- Garante que o clique seja solto ao desativar
+        end
+    end
+end)
