@@ -1,0 +1,157 @@
+if not game:IsLoaded() then
+    game.Loaded:Wait() -- Espera o jogo carregar
+end
+
+-- Configurações
+local player = game.Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local aimAssistEnabled = false  
+local aimAssistStrength = 0.05  
+local aimRadius = 250           
+local teamChecker = false  -- Verifica se está no mesmo time
+local userInputService = game:GetService("UserInputService")
+
+-- Criando GUI
+local gui = Instance.new("ScreenGui", game.CoreGui)
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 250, 0, 180)
+frame.Position = UDim2.new(0.5, -125, 0.2, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 2
+frame.Active = true
+frame.Draggable = true -- Permite mover o menu
+
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, 0, 0, 25)
+title.BackgroundTransparency = 1
+title.Text = "Aim Assist"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 20
+
+-- Botão de ativar/desativar Aim Assist
+local toggleButton = Instance.new("TextButton", frame)
+toggleButton.Size = UDim2.new(0.8, 0, 0, 30)
+toggleButton.Position = UDim2.new(0.1, 0, 0.25, 0)
+toggleButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 18
+toggleButton.Text = "Ativar Aim Assist"
+
+-- Botão de Team Checker
+local teamButton = Instance.new("TextButton", frame)
+teamButton.Size = UDim2.new(0.8, 0, 0, 30)
+teamButton.Position = UDim2.new(0.1, 0, 0.5, 0)
+teamButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+teamButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+teamButton.Font = Enum.Font.SourceSansBold
+teamButton.TextSize = 18
+teamButton.Text = "Team Checker: OFF"
+
+-- Slider para força do Aim Assist
+local sliderFrame = Instance.new("Frame", frame)
+sliderFrame.Size = UDim2.new(0.8, 0, 0, 20)
+sliderFrame.Position = UDim2.new(0.1, 0, 0.75, 0)
+sliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+
+local slider = Instance.new("TextButton", sliderFrame)
+slider.Size = UDim2.new(0, 10, 1, 0)
+slider.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+slider.Text = ""
+
+local sliderLabel = Instance.new("TextLabel", frame)
+sliderLabel.Size = UDim2.new(0.8, 0, 0, 20)
+sliderLabel.Position = UDim2.new(0.1, 0, 0.9, 0)
+sliderLabel.BackgroundTransparency = 1
+sliderLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+sliderLabel.Font = Enum.Font.SourceSansBold
+sliderLabel.TextSize = 16
+sliderLabel.Text = "Força: " .. tostring(aimAssistStrength)
+
+-- Atualiza Slider no mobile
+local function updateSlider(input)
+    local pos = math.clamp((input.Position.X - sliderFrame.AbsolutePosition.X) / sliderFrame.AbsoluteSize.X, 0, 1)
+    slider.Position = UDim2.new(pos, -5, 0, 0)
+    aimAssistStrength = 0.01 + pos * 0.2 -- Ajusta força entre 0.01 e 0.2
+    sliderLabel.Text = "Força: " .. string.format("%.2f", aimAssistStrength)
+end
+
+-- Configura slider para toque na tela
+slider.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        local moveConnection
+        moveConnection = userInputService.InputChanged:Connect(function(moveInput)
+            if moveInput.UserInputType == Enum.UserInputType.Touch or moveInput.UserInputType == Enum.UserInputType.MouseMovement then
+                updateSlider(moveInput)
+            end
+        end)
+        userInputService.InputEnded:Connect(function(endInput)
+            if endInput.UserInputType == Enum.UserInputType.Touch or endInput.UserInputType == Enum.UserInputType.MouseButton1 then
+                moveConnection:Disconnect()
+            end
+        end)
+    end
+end)
+
+-- Botão de ativar/desativar Aim Assist
+toggleButton.MouseButton1Click:Connect(function()
+    aimAssistEnabled = not aimAssistEnabled
+    toggleButton.Text = aimAssistEnabled and "Desativar Aim Assist" or "Ativar Aim Assist"
+    toggleButton.BackgroundColor3 = aimAssistEnabled and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(70, 70, 70)
+end)
+
+-- Botão de Team Checker
+teamButton.MouseButton1Click:Connect(function()
+    teamChecker = not teamChecker
+    teamButton.Text = teamChecker and "Team Checker: ON" or "Team Checker: OFF"
+    teamButton.BackgroundColor3 = teamChecker and Color3.fromRGB(0, 200, 0) or Color3.fromRGB(70, 70, 70)
+end)
+
+-- Aim Assist (ajusta para o Torso dos jogadores)
+game:GetService("RunService").RenderStepped:Connect(function(deltaTime)
+    if not aimAssistEnabled then return end
+
+    local closestTarget = nil
+    local shortestDistance = math.huge
+
+    for _, character in pairs(workspace:GetChildren()) do
+        if character:IsA("Model") and character ~= player.Character and character:FindFirstChild("Torso") and character:FindFirstChild("Humanoid") and character.Humanoid.Health > 0 then
+            
+            -- Verifica se está no mesmo time
+            local targetPlayer = game.Players:GetPlayerFromCharacter(character)
+            if teamChecker and targetPlayer and targetPlayer.Team == player.Team then
+                continue -- Pula aliados
+            end
+
+            local screenPos, onScreen = camera:WorldToScreenPoint(character.Torso.Position)
+            local distance = (Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2) - Vector2.new(screenPos.X, screenPos.Y)).magnitude
+
+            -- Faz Raycast para checar obstáculos
+            local origin = camera.CFrame.Position    
+            local direction = (character.Torso.Position - origin).unit * (character.Torso.Position - origin).magnitude    
+            local raycastParams = RaycastParams.new()    
+            raycastParams.FilterDescendantsInstances = {player.Character}    
+            raycastParams.FilterType = Enum.RaycastFilterType.Blacklist    
+            local result = workspace:Raycast(origin, direction, raycastParams)    
+
+            if onScreen and distance < aimRadius and distance < shortestDistance and (not result or result.Instance:IsDescendantOf(character)) then    
+                shortestDistance = distance    
+                closestTarget = character    
+            end    
+        end
+    end
+
+    -- Ajusta a mira para o Torso
+    if closestTarget then
+        local targetPosition = closestTarget.Head.Position
+        local directionToTarget = (targetPosition - camera.CFrame.Position).unit
+        local currentLookAt = camera.CFrame.LookVector
+
+        local smoothLook = currentLookAt:Lerp(directionToTarget, aimAssistStrength * deltaTime * 60)
+        camera.CFrame = CFrame.new(camera.CFrame.Position, camera.CFrame.Position + smoothLook)
+
+    end
+end)
